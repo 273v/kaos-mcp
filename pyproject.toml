@@ -1,0 +1,138 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kaos-mcp"
+dynamic = ["version"]
+description = "FastMCP runtime and server bridge for KAOS — exposes any KaosRuntime over stdio or streamable HTTP"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  { name = "273 Ventures LLC", email = "it@273ventures.com" },
+]
+maintainers = [
+  { name = "Michael Bommarito", email = "mike@273ventures.com" },
+]
+keywords = [
+  "mcp",
+  "fastmcp",
+  "agentic",
+  "kaos",
+  "runtime",
+  "server",
+  "streamable-http",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dependencies = [
+  "httpx>=0.28.1",
+  "kaos-content[markdown]>=0.1.0a2,<0.2",
+  "kaos-core>=0.1.0a4,<0.2",
+  "mcp[cli]>=1.26.0",
+  "pydantic>=2.11.0",
+  "pydantic-settings>=2.8.1",
+  "starlette>=0.47.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.26.0",
+  "pytest-cov>=6.0.0",
+  "ruff>=0.11.0",
+  "ty>=0.0.34,<0.1",
+]
+
+[project.scripts]
+kaos = "kaos_mcp.management.cli:main"
+kaos-mcp = "kaos_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://kelvin.legal"
+Documentation = "https://docs.kelvin.legal"
+Repository = "https://github.com/273v/kaos-mcp"
+Issues = "https://github.com/273v/kaos-mcp/issues"
+Changelog = "https://github.com/273v/kaos-mcp/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "kaos_mcp/_version.py"
+
+[tool.hatch.build.targets.sdist]
+# Sdist intentionally excludes /tests, /docs, and /CLAUDE.md.
+# CLAUDE.md references monorepo-only checklists; tests/integration
+# pulls a runtime context. Source code, license, changelog, and
+# packaging metadata are enough for source-build verification on PyPI.
+include = [
+  "/kaos_mcp",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/pyproject.toml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["kaos_mcp"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--cov=kaos_mcp",
+  "--cov-branch",
+  "--cov-report=term-missing",
+]
+markers = [
+  "integration: end-to-end behavior checks",
+  "unit: focused unit checks",
+]
+
+[tool.coverage.run]
+source = ["kaos_mcp"]
+branch = true
+omit = [
+  "*/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "@abstractmethod",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C4", "PTH"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kaos_mcp"]
+
+[tool.ty.src]
+include = ["kaos_mcp", "tests"]
+
+[tool.uv]
+package = true
