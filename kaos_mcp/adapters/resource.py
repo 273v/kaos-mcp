@@ -14,7 +14,7 @@ from mcp.server.fastmcp.resources import Resource
 from pydantic import AnyUrl, Field, validate_call
 
 from kaos_mcp.adapters._error_handling import resource_error_from_exception
-from kaos_mcp.adapters.context import ContextBridge
+from kaos_mcp.adapters.context import ContextBridge, caller_session_id
 from kaos_mcp.config import KaosMCPSettings
 
 
@@ -115,6 +115,7 @@ class ResourceAdapter:
                 payload = await self._runtime.artifacts.read_uri(
                     f"kaos://artifacts/{artifact_id}/manifest",
                     roots=roots,
+                    caller_session_id=caller_session_id(ctx),
                 )
                 if isinstance(payload, bytes):
                     return payload.decode("utf-8", errors="replace")
@@ -138,6 +139,7 @@ class ResourceAdapter:
                 return await self._runtime.artifacts.read_uri(
                     f"kaos://artifacts/{artifact_id}/body",
                     roots=roots,
+                    caller_session_id=caller_session_id(ctx),
                 )
             except Exception as exc:
                 raise self._wrap_resource_error(
@@ -164,6 +166,7 @@ class ResourceAdapter:
                     chunk_index=chunk_index,
                     chunk_size=self._runtime.settings.artifact_chunk_size_bytes,
                     roots=roots,
+                    caller_session_id=caller_session_id(ctx),
                 )
             except Exception as exc:
                 raise self._wrap_resource_error(
@@ -185,6 +188,14 @@ class ResourceAdapter:
             ctx: FastMCPContext,
         ) -> bytes:
             try:
+                # F4: cap caller-supplied length so a single request cannot
+                # request an unbounded byte range.
+                if length > self._settings.max_range_length:
+                    raise FastMCPResourceError(
+                        f"kaos://artifacts/{artifact_id}/range/{start}/{length}: "
+                        f"length {length} exceeds max_range_length "
+                        f"{self._settings.max_range_length}"
+                    )
                 roots = await self._bridge.list_roots(ctx)
                 return await self._runtime.artifacts.read_body(
                     artifact_id,
@@ -192,6 +203,7 @@ class ResourceAdapter:
                     length=length,
                     roots=roots,
                     max_bytes=length,
+                    caller_session_id=caller_session_id(ctx),
                 )
             except Exception as exc:
                 raise self._wrap_resource_error(

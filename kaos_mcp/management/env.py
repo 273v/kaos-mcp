@@ -1,7 +1,32 @@
 """Environment setup — install uv, Python, fnm, Node.js, pnpm.
 
-Cross-platform toolchain installation. Delegates to the shell script
-for actual installation, or calls tools directly when possible.
+Cross-platform toolchain installation. Delegates to the in-tree shell
+script (``scripts/setup-env.sh`` co-located with the kaos-modules
+checkout) for monorepo runs, or calls upstream installers directly when
+running outside the monorepo.
+
+audit-02 F6 hardening:
+
+- ``_find_setup_script`` discovers ``scripts/setup-env.sh`` only by
+  walking from this module's ``__file__``, never from ``Path.cwd()``.
+  The cwd-based fallback was a path-confused execution surface — any
+  directory containing a ``scripts/setup-env.sh`` would have been
+  invoked.
+- Direct ``curl | sh`` pipelines now require explicit confirmation
+  (``confirm=True`` from code, or ``--yes`` from the CLI). Without
+  confirmation the installer command is printed and the action lists
+  what would be run, but no network fetch is performed.
+- The exact installer URLs invoked are documented inline below and in
+  ``SECURITY.md``.
+
+Installer endpoints (require explicit confirmation):
+
+- ``https://astral.sh/uv/install.sh`` — Astral uv installer
+- ``https://fnm.vercel.app/install`` — Schniz fnm installer
+
+Operators that prefer their package manager (``apt``, ``brew``,
+``winget``) should install ``uv``, ``fnm``, and ``pnpm`` directly and
+skip ``kaos setup env`` entirely.
 """
 
 from __future__ import annotations
@@ -11,6 +36,9 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
+FNM_INSTALLER_URL = "https://fnm.vercel.app/install"
 
 
 def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -23,16 +51,17 @@ def _which(name: str) -> str | None:
 
 
 def _find_setup_script() -> Path | None:
-    """Find scripts/setup-env.sh in the kaos-modules repo."""
+    """Find ``scripts/setup-env.sh`` adjacent to this package's checkout.
+
+    Walks ancestors of ``__file__`` only — never ``Path.cwd()`` (F6).
+    Returns ``None`` outside the monorepo so the caller falls back to the
+    direct-installer path (which itself requires explicit confirmation).
+    """
     current = Path(__file__).resolve()
     for parent in current.parents:
         script = parent / "scripts" / "setup-env.sh"
         if script.exists():
             return script
-    # Also check cwd
-    cwd_script = Path.cwd() / "scripts" / "setup-env.sh"
-    if cwd_script.exists():
-        return cwd_script
     return None
 
 
@@ -43,11 +72,15 @@ def setup_env(
     skip_node: bool = False,
     skip_python: bool = False,
     dry_run: bool = False,
+    confirm: bool = False,
 ) -> list[str]:
     """Install the KAOS development toolchain.
 
-    Prefers the shell script (scripts/setup-env.sh) when available.
-    Falls back to direct tool invocation.
+    Prefers ``scripts/setup-env.sh`` co-located with the kaos-modules
+    checkout (monorepo path). Falls back to direct upstream installers
+    when running outside the monorepo. Direct installer fetches require
+    ``confirm=True`` (audit-02 F6) — without confirmation the helper
+    reports what *would* be run and exits.
 
     Returns list of actions taken.
     """
@@ -69,6 +102,7 @@ def setup_env(
         skip_node=skip_node,
         skip_python=skip_python,
         dry_run=dry_run,
+        confirm=confirm,
     )
 
 
@@ -106,8 +140,14 @@ def _setup_direct(
     skip_node: bool,
     skip_python: bool,
     dry_run: bool,
+    confirm: bool = False,
 ) -> list[str]:
-    """Direct tool installation (fallback when script not available)."""
+    """Direct tool installation (fallback when script not available).
+
+    F6: ``curl | sh`` pipelines require ``confirm=True`` (CLI: ``--yes``).
+    Without confirmation, the installer URL is reported and no network
+    fetch happens.
+    """
     actions: list[str] = []
     is_windows = platform.system() == "Windows"
 
@@ -115,12 +155,17 @@ def _setup_direct(
         # Install uv
         if not _which("uv"):
             if dry_run:
-                actions.append("Would install uv")
+                actions.append(f"Would install uv from {UV_INSTALLER_URL}")
             elif is_windows:
                 actions.append("Run in PowerShell: irm https://astral.sh/uv/install.ps1 | iex")
+            elif not confirm:
+                actions.append(
+                    f"uv installer requires --yes; would fetch {UV_INSTALLER_URL} | sh "
+                    "(re-run with --yes to confirm, or install via your package manager)"
+                )
             else:
                 result = subprocess.run(
-                    ["bash", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"],
+                    ["bash", "-c", f"curl -LsSf {UV_INSTALLER_URL} | sh"],
                     timeout=120,
                 )
                 actions.append("Installed uv" if result.returncode == 0 else "Failed to install uv")
@@ -142,15 +187,20 @@ def _setup_direct(
         # Install fnm
         if not _which("fnm"):
             if dry_run:
-                actions.append("Would install fnm")
+                actions.append(f"Would install fnm from {FNM_INSTALLER_URL}")
             elif is_windows:
                 actions.append("Run: winget install Schniz.fnm")
+            elif not confirm:
+                actions.append(
+                    f"fnm installer requires --yes; would fetch {FNM_INSTALLER_URL} | bash "
+                    "(re-run with --yes to confirm, or install via your package manager)"
+                )
             else:
                 result = subprocess.run(
                     [
                         "bash",
                         "-c",
-                        "curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell",
+                        f"curl -fsSL {FNM_INSTALLER_URL} | bash -s -- --skip-shell",
                     ],
                     timeout=120,
                 )

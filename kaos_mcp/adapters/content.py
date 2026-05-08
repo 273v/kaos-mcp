@@ -21,7 +21,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ResourceError as FastMCPResourceError
 
 from kaos_mcp.adapters._error_handling import resource_error_from_exception
-from kaos_mcp.adapters.context import ContextBridge
+from kaos_mcp.adapters.context import ContextBridge, caller_session_id
 from kaos_mcp.config import KaosMCPSettings
 
 # Number of content resource templates registered
@@ -51,6 +51,24 @@ class ContentResourceAdapter:
             raise FastMCPResourceError(msg)
         return manifest, None  # Lazy — we load async in each handler
 
+    def _assert_caller_can_read(self, artifact_id: str, ctx: FastMCPContext) -> str | None:
+        """Refuse cross-session reads at the boundary (audit-02 F1).
+
+        ``runtime.artifacts.resolve(caller_session_id=...)`` raises
+        ``ResourceError("Unknown artifact")`` when the manifest's owning
+        session does not match the caller — uniform with the genuine
+        not-found error so probes can't enumerate other sessions. Returns
+        the resolved caller session id so handlers can pass it to
+        ``read_text``/``read_uri`` for direct reads.
+
+        Returns ``None`` outside an MCP request scope (in-process / test
+        callers); ``resolve(caller_session_id=None)`` skips enforcement
+        per the trusted-in-process contract.
+        """
+        caller = caller_session_id(ctx)
+        self._runtime.artifacts.resolve(artifact_id, caller_session_id=caller)
+        return caller
+
     def _register_templates(self, app: FastMCP) -> None:
         @app.resource(
             "kaos://content/{artifact_id}",
@@ -61,7 +79,16 @@ class ContentResourceAdapter:
         )
         async def content_document(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
-                return await self._runtime.artifacts.read_text(artifact_id)
+                caller = self._assert_caller_can_read(artifact_id, ctx)
+                # F4: bound the read at max_resource_bytes — read_body raises
+                # ``Artifact exceeds inline read limit`` when the manifest's
+                # size is larger than the cap.
+                payload = await self._runtime.artifacts.read_body(
+                    artifact_id,
+                    max_bytes=self._settings.max_resource_bytes,
+                    caller_session_id=caller,
+                )
+                return payload.decode("utf-8")
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
 
@@ -74,10 +101,13 @@ class ContentResourceAdapter:
         )
         async def content_markdown(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_document
                 from kaos_content.serializers import serialize_markdown
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return serialize_markdown(doc)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -91,9 +121,12 @@ class ContentResourceAdapter:
         )
         async def content_metadata(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import document_metadata, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return json.dumps(document_metadata(doc), indent=2)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -107,9 +140,12 @@ class ContentResourceAdapter:
         )
         async def content_outline(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import document_outline, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return json.dumps(document_outline(doc), indent=2)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -123,9 +159,12 @@ class ContentResourceAdapter:
         )
         async def content_tables(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import document_tables_summary, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return json.dumps(document_tables_summary(doc), indent=2)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -139,9 +178,12 @@ class ContentResourceAdapter:
         )
         async def content_annotations(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import document_annotations_by_type, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return json.dumps(document_annotations_by_type(doc), indent=2)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -155,9 +197,12 @@ class ContentResourceAdapter:
         )
         async def content_definitions(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import document_definitions, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return json.dumps(document_definitions(doc), indent=2)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -174,11 +219,14 @@ class ContentResourceAdapter:
         )
         async def content_node(artifact_id: str, node_ref: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import document_node_subtree, load_document
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 # URL-decode and reconstruct the JSON pointer format
                 decoded = unquote(node_ref)
                 ref = f"#/{decoded}" if not decoded.startswith("#") else decoded
@@ -197,10 +245,13 @@ class ContentResourceAdapter:
         )
         async def content_pages_index(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_document
                 from kaos_content.views import DocumentView
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = DocumentView(doc)
                 pages = [
                     {
@@ -223,10 +274,13 @@ class ContentResourceAdapter:
         )
         async def content_page(artifact_id: str, page_number: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_document
                 from kaos_content.views import DocumentView
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = DocumentView(doc)
                 return view.page_as_markdown(int(page_number))
             except Exception as exc:
@@ -241,10 +295,13 @@ class ContentResourceAdapter:
         )
         async def content_sections_tree(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_document
                 from kaos_content.views import DocumentView
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = DocumentView(doc)
 
                 def _section_to_dict(sv):
@@ -273,12 +330,15 @@ class ContentResourceAdapter:
         )
         async def content_section(artifact_id: str, section_ref: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_document
                 from kaos_content.views import DocumentView
 
-                doc = await load_document(artifact_id, self._runtime)
+                doc = await load_document(
+                    artifact_id, self._runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = DocumentView(doc)
                 decoded = unquote(section_ref)
                 ref = f"#/{decoded}" if not decoded.startswith("#") else decoded

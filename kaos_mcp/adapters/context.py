@@ -9,6 +9,56 @@ from mcp.server.fastmcp import Context as FastMCPContext
 from kaos_mcp.config import KaosMCPSettings
 
 
+def caller_session_id(ctx: FastMCPContext) -> str | None:
+    """Return the caller's session identity for artifact isolation.
+
+    Resolution order (audit-02 F1):
+
+    1. ``ctx.client_id`` — populated when the request supplies
+       ``_meta.client_id`` explicitly. Highest precedence; lets a
+       trusted broker re-tag requests on behalf of multiple end users.
+    2. ``ctx.session.client_params.clientInfo.name`` — the
+       client-supplied name from MCP ``initialize``. Session-stable
+       across all requests within one connection, so artifacts created
+       and read by the same client always match. This is the typical
+       production identity (e.g. ``"claude-code"``, ``"codex"``).
+    3. ``ctx.request_id`` — per-request UUID. Last-ditch fallback; means
+       every request is its own session, so cross-request reads always
+       fail. Safe-by-default when no identity is presented.
+
+    Returns ``None`` when none of the above are available — typically
+    when the handler is invoked outside an MCP request scope (in-process
+    / test callers). Per the artifact store contract, ``None`` means
+    "trusted in-process caller, no enforcement". Real MCP traffic always
+    has a request scope so production callers never hit this fallback.
+    """
+    try:
+        client_id = ctx.client_id
+    except (ValueError, AttributeError):
+        client_id = None
+    if client_id:
+        return client_id
+
+    # Session-stable identity from MCP initialize/clientInfo.
+    try:
+        session = ctx.session
+        client_params = getattr(session, "client_params", None)
+        if client_params is not None:
+            client_info = getattr(client_params, "clientInfo", None)
+            if client_info is not None:
+                name = getattr(client_info, "name", None)
+                if name:
+                    return name
+    except (ValueError, AttributeError):
+        pass
+
+    try:
+        request_id = ctx.request_id
+    except (ValueError, AttributeError):
+        return None
+    return request_id or None
+
+
 class ContextBridge:
     def __init__(self, runtime: KaosRuntime, settings: KaosMCPSettings) -> None:
         self._runtime = runtime

@@ -45,7 +45,8 @@ def create_app(
         ResourceAdapter(runtime, resolved_settings).register_runtime_resources(app)
         ContentResourceAdapter(runtime, resolved_settings).register_content_templates(app)
         TabularResourceAdapter(runtime, resolved_settings).register_tabular_templates(app)
-        ConfigResourceAdapter(runtime, resolved_settings).register_config_resource(app)
+        if resolved_settings.expose_server_config:
+            ConfigResourceAdapter(runtime, resolved_settings).register_config_resource(app)
         SessionResourceAdapter(runtime, resolved_settings).register_session_templates(app)
 
     # Register workflow prompts
