@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0a2] — 2026-05-08
+
+Patch release closing the eight findings in `docs/audit-02/kaos-mcp.md`
+(audit-02 F1–F8). No public-API removals; one new optional setting
+(`expose_server_config`) opts into the diagnostic config resource that
+was previously always-on. Existing `KaosMCPSettings` fields gained three
+DoS-cap defaults (`max_resource_bytes`, `max_range_length`,
+`max_table_rows`).
+
+### Security
+
+- **F1: per-session artifact isolation enforced at the MCP boundary.**
+  Every artifact / content / tabular / session resource handler now
+  derives the caller's session via `caller_session_id(ctx)` (prefers
+  `ctx.client_id`, falls back to `ctx.request_id`) and passes it as
+  `caller_session_id=` into `runtime.artifacts.*` reads. Cross-session
+  reads return a uniform `ResourceError("Unknown artifact")` so probing
+  cannot enumerate other sessions. `kaos://session/{session_id}/artifacts`
+  also refuses to enumerate any session other than the caller's.
+  Regression coverage: `tests/unit/test_session_enforcement.py` (10
+  tests). Files: `kaos_mcp/adapters/{session,resource,content,tabular,context}.py`.
+- **F3: `kaos://server/config` is opt-in and redaction is hardened.**
+  New `KaosMCPSettings.expose_server_config` (default `False`) gates
+  registration. When enabled, `_redact_value` always emits the constant
+  `"***"` (no `first4...last4` partial disclosure), and `_dump_settings`
+  redacts plain-`str` fields whose names match
+  `token|password|api_key|secret|credential|auth`. Regression coverage:
+  `tests/unit/test_config_resource.py` (15 tests including legacy
+  plain-`str` credential names). Files:
+  `kaos_mcp/{config,app}.py`, `kaos_mcp/adapters/config_resource.py`.
+- **F4: resource read DoS caps.** New settings
+  `max_resource_bytes` (10 MiB), `max_range_length` (10 MiB), and
+  `max_table_rows` (100 000) bound every artifact / content / tabular
+  read at the MCP boundary. `kaos://artifacts/{id}/range/{start}/{length}`
+  rejects oversize ranges; content-document and tabular-json reads
+  surface the artifact store's "Artifact exceeds inline read limit"
+  error; `kaos://tabular/{id}/table/{name}/rows/{start}/{count}`
+  rejects oversize row counts. Regression coverage:
+  `tests/unit/test_resource_caps.py`. Files:
+  `kaos_mcp/config.py`, `kaos_mcp/adapters/{resource,content,tabular}.py`.
+- **F5: `GOVINFO_API_KEY` written as env reference, not resolved value.**
+  `kaos_mcp/management/setup.py:_server_entries` now persists the
+  literal `${GOVINFO_API_KEY}` token into `.mcp.json`, `.codex/config.toml`,
+  `.gemini/settings.json`, `.vscode/mcp.json`, and `.cursor/mcp.json`.
+  Claude Code, Codex CLI, and Gemini CLI expand the reference at agent
+  launch — the project-local config never carries plaintext secrets.
+  Regression coverage: `tests/unit/test_management.py::TestSetup`
+  (`test_govinfo_*`, `test_setup_claude_writes_env_reference_not_secret`).
+- **F6: `kaos setup env` requires `--yes` for installer pipelines and
+  drops cwd-based script discovery.** `_find_setup_script` now walks
+  only from `__file__` (no more `Path.cwd()` fallback that would have
+  executed any nearby `scripts/setup-env.sh`). Direct
+  `curl … | sh` invocations against `https://astral.sh/uv/install.sh`
+  and `https://fnm.vercel.app/install` now require explicit
+  confirmation (CLI `--yes` flag, `confirm=True` from code); without
+  it the command is reported but not run. Regression coverage:
+  `tests/unit/test_management.py::TestSetup` (`test_setup_env_*`,
+  `test_find_setup_script_does_not_use_cwd`). Files:
+  `kaos_mcp/management/{env,cli}.py`.
+- **F7: CI supply-chain hardening.** `.github/workflows/security.yml`
+  pins the gitleaks Docker image to `v8.21.2` (no longer `:latest`),
+  adds a Bandit static-analysis job (medium severity / medium
+  confidence, AST-level), and runs the integration suite on
+  `schedule` and `workflow_dispatch`. SHA-pinning of GitHub Actions
+  themselves remains a follow-up; the existing
+  `.github/dependabot.yml` `github-actions` ecosystem PRs continue to
+  keep tag-pinned actions current.
+
+### Changed
+
+- **F2 + F8: `SECURITY.md` rewritten to match the actual surface.**
+  The previous file referenced `ProgramOfThought`, `batch_run`, the
+  semantic cache, and Program v3 — all of which live in
+  `kaos-llm-core` / `kaos-agents`, not `kaos-mcp`. The new file
+  documents the real boundaries (MCP transport, request validation,
+  per-session artifact enforcement, opt-in config resource, DoS caps,
+  setup helpers, OIDC release pipeline) and adds an explicit threat
+  model section explaining that per-request `_meta.kaos_config`
+  overrides are accepted as-is and that `kaos-mcp` should only be
+  exposed to trusted clients (stdio, or streamable HTTP behind an
+  authenticating proxy). Closes audit-02 F2 (documented threat model)
+  and F8 (scope alignment).
+
 ## [0.1.0a1] — 2026-05-07
 
 First public alpha. FastMCP-native server bridge that wraps any
@@ -74,5 +157,6 @@ and exposes them over stdio or streamable HTTP. Closes every finding in
   `httpx`, and `starlette` — back to the documented `kaos-mcp ->
   kaos-core, kaos-content` architecture edge.
 
-[Unreleased]: https://github.com/273v/kaos-mcp/compare/v0.1.0a1...HEAD
+[Unreleased]: https://github.com/273v/kaos-mcp/compare/v0.1.0a2...HEAD
+[0.1.0a2]: https://github.com/273v/kaos-mcp/compare/v0.1.0a1...v0.1.0a2
 [0.1.0a1]: https://github.com/273v/kaos-mcp/releases/tag/v0.1.0a1

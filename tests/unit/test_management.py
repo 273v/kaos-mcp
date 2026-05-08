@@ -204,6 +204,106 @@ class TestSetup:
         assert "--browser" in entries["kaos-web"]["args"]
         assert "--crawl" in entries["kaos-web"]["args"]
 
+    def test_govinfo_key_written_as_env_reference_not_resolved_value(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """audit-02 F5: agent configs must hold a literal ${GOVINFO_API_KEY}
+        env reference, never a resolved secret value, regardless of whether
+        the variable is currently set in the shell environment."""
+        # Even with a "real" key present, the entry must still be the env ref.
+        monkeypatch.setenv("GOVINFO_API_KEY", "would-leak-if-resolved-XYZ")
+        kaos_dir = _find_kaos_dir()
+        entries = _server_entries(kaos_dir)
+        env = entries["kaos-source"].get("env", {})
+        assert env.get("GOVINFO_API_KEY") == "${GOVINFO_API_KEY}"
+        # Defensive — assert the resolved value never appears anywhere.
+        serialized = json.dumps(entries)
+        assert "would-leak-if-resolved-XYZ" not in serialized
+
+    def test_govinfo_env_reference_present_when_var_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Env reference is generated even when the user has no current value."""
+        monkeypatch.delenv("GOVINFO_API_KEY", raising=False)
+        kaos_dir = _find_kaos_dir()
+        entries = _server_entries(kaos_dir)
+        assert entries["kaos-source"]["env"]["GOVINFO_API_KEY"] == "${GOVINFO_API_KEY}"
+
+    def test_setup_env_dry_run_reports_installer_urls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """F6: dry-run prints the exact installer URL it would fetch."""
+        from kaos_mcp.management import env as env_module
+
+        # Force the "no script found" branch so direct installers are
+        # reported, and pretend uv/fnm aren't installed.
+        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
+        monkeypatch.setattr(env_module, "_which", lambda _name: None)
+
+        actions = env_module.setup_env(dry_run=True)
+        joined = "\n".join(actions)
+        assert env_module.UV_INSTALLER_URL in joined
+        assert env_module.FNM_INSTALLER_URL in joined
+
+    def test_setup_env_without_yes_does_not_fetch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """F6: ``confirm=False`` MUST NOT invoke any subprocess.run for
+        installer pipelines. Reports what would run instead."""
+        from kaos_mcp.management import env as env_module
+
+        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
+        monkeypatch.setattr(env_module, "_which", lambda _name: None)
+
+        called: list[list[str]] = []
+
+        def _no_subprocess(cmd: list[str], **_kw: object) -> object:
+            called.append(cmd)
+            raise AssertionError(f"subprocess.run was invoked without --yes confirmation: {cmd}")
+
+        monkeypatch.setattr(env_module.subprocess, "run", _no_subprocess)
+
+        actions = env_module.setup_env(confirm=False, dry_run=False)
+        # Confirmation gate should produce a "requires --yes" message.
+        assert any("requires --yes" in a for a in actions), actions
+        assert called == []
+
+    def test_find_setup_script_does_not_use_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """F6: drop the cwd-based discovery — only walk from __file__."""
+        from kaos_mcp.management import env as env_module
+
+        # Plant a fake setup-env.sh in cwd. The hardened function must
+        # NOT pick it up.
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "setup-env.sh").write_text("#!/bin/bash\necho fake")
+        monkeypatch.chdir(tmp_path)
+
+        result = env_module._find_setup_script()
+        # Either returns None (no monorepo present) or returns the
+        # __file__-derived path. In either case it must not equal the
+        # cwd-planted decoy.
+        assert result != scripts_dir / "setup-env.sh"
+
+    def test_setup_claude_writes_env_reference_not_secret(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """End-to-end: setup_claude must persist ``${GOVINFO_API_KEY}``."""
+        from kaos_mcp.management.setup import setup_claude
+
+        monkeypatch.setenv("GOVINFO_API_KEY", "would-leak-if-resolved-ABCDEF")
+        original_cwd = Path.cwd()
+        try:
+            import os
+
+            os.chdir(tmp_path)
+            setup_claude(force=True)
+            mcp_text = (tmp_path / ".mcp.json").read_text()
+            assert "${GOVINFO_API_KEY}" in mcp_text
+            assert "would-leak-if-resolved-ABCDEF" not in mcp_text
+        finally:
+            os.chdir(original_cwd)
+
     def test_setup_claude_force_writes_mcp_json(self, tmp_path: Path) -> None:
         """Test file-based setup (--force skips CLI)."""
         from kaos_mcp.management.setup import setup_claude

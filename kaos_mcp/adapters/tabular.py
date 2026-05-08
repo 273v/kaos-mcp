@@ -19,8 +19,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from mcp.server.fastmcp import Context as FastMCPContext
+
 from kaos_mcp.adapters._error_handling import resource_error_from_exception
-from kaos_mcp.adapters.context import ContextBridge
+from kaos_mcp.adapters.context import ContextBridge, caller_session_id
 
 if TYPE_CHECKING:
     from kaos_core.registry.container import KaosRuntime
@@ -52,6 +54,17 @@ class TabularResourceAdapter:
         self._register_templates(app)
         return TABULAR_TEMPLATE_COUNT
 
+    def _assert_caller_can_read(self, artifact_id: str, ctx: FastMCPContext) -> str | None:
+        """Refuse cross-session reads at the boundary (audit-02 F1).
+
+        Returns ``None`` when no MCP request is active (in-process / test
+        callers); enforcement bypassed in that case per the trusted-in-
+        process contract documented in ``ArtifactStore``.
+        """
+        caller = caller_session_id(ctx)
+        self._runtime.artifacts.resolve(artifact_id, caller_session_id=caller)
+        return caller
+
     def _register_templates(self, app: FastMCP) -> None:
         runtime = self._runtime
 
@@ -63,9 +76,17 @@ class TabularResourceAdapter:
             description="Full TabularDocument AST as JSON.",
             mime_type="application/json",
         )
-        async def tabular_json(artifact_id: str) -> str:
+        async def tabular_json(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
-                return await runtime.artifacts.read_text(artifact_id)
+                caller = self._assert_caller_can_read(artifact_id, ctx)
+                # F4: bound the read at max_resource_bytes — read_body raises
+                # ``Artifact exceeds inline read limit`` for oversize artifacts.
+                payload = await runtime.artifacts.read_body(
+                    artifact_id,
+                    max_bytes=self._settings.max_resource_bytes,
+                    caller_session_id=caller,
+                )
+                return payload.decode("utf-8")
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
 
@@ -77,12 +98,15 @@ class TabularResourceAdapter:
             description="Table names, dimensions, and column types.",
             mime_type="application/json",
         )
-        async def tabular_summary(artifact_id: str) -> str:
+        async def tabular_summary(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.views.tabular_view import TabularView
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = TabularView(doc)
                 return json.dumps(view.summary_dict(), indent=2, default=str)
             except Exception as exc:
@@ -96,12 +120,15 @@ class TabularResourceAdapter:
             description="Full tabular document as markdown with tables.",
             mime_type="text/markdown",
         )
-        async def tabular_markdown(artifact_id: str) -> str:
+        async def tabular_markdown(artifact_id: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.serializers.tabular import serialize_tabular_markdown
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 return serialize_tabular_markdown(doc)
             except Exception as exc:
                 raise resource_error_from_exception(exc) from exc
@@ -114,14 +141,17 @@ class TabularResourceAdapter:
             description="Single table as TSV. Token-efficient format for agents.",
             mime_type="text/tab-separated-values",
         )
-        async def tabular_table_tsv(artifact_id: str, table_name: str) -> str:
+        async def tabular_table_tsv(artifact_id: str, table_name: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.serializers.tabular import serialize_tsv
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 table = doc.get_table(unquote(table_name))
                 return serialize_tsv(table)
             except Exception as exc:
@@ -135,14 +165,19 @@ class TabularResourceAdapter:
             description="Column names, types, nullability, and metadata.",
             mime_type="application/json",
         )
-        async def tabular_table_schema(artifact_id: str, table_name: str) -> str:
+        async def tabular_table_schema(
+            artifact_id: str, table_name: str, ctx: FastMCPContext
+        ) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.views.tabular_view import TabularView
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = TabularView(doc)
                 schema = view.table_schema(unquote(table_name))
                 return json.dumps(schema, indent=2, default=str)
@@ -157,15 +192,20 @@ class TabularResourceAdapter:
             description="Column statistics: null counts, unique counts, min/max, samples.",
             mime_type="application/json",
         )
-        async def tabular_table_describe(artifact_id: str, table_name: str) -> str:
+        async def tabular_table_describe(
+            artifact_id: str, table_name: str, ctx: FastMCPContext
+        ) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from dataclasses import asdict
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.views.tabular_view import TabularView
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 view = TabularView(doc)
                 stats = view.all_column_stats(unquote(table_name))
                 return json.dumps([asdict(s) for s in stats], indent=2, default=str)
@@ -180,14 +220,17 @@ class TabularResourceAdapter:
             description="Single table as a markdown table.",
             mime_type="text/markdown",
         )
-        async def tabular_table_md(artifact_id: str, table_name: str) -> str:
+        async def tabular_table_md(artifact_id: str, table_name: str, ctx: FastMCPContext) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.serializers.tabular import serialize_markdown_table
 
-                doc = await load_tabular(artifact_id, runtime)
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
                 table = doc.get_table(unquote(table_name))
                 return serialize_markdown_table(table)
             except Exception as exc:
@@ -206,18 +249,33 @@ class TabularResourceAdapter:
             table_name: str,
             start: str,
             count: str,
+            ctx: FastMCPContext,
         ) -> str:
             try:
+                self._assert_caller_can_read(artifact_id, ctx)
                 from urllib.parse import unquote
 
                 from kaos_content.artifacts import load_tabular
                 from kaos_content.serializers.tabular import serialize_tsv
                 from kaos_content.views.tabular_view import TabularView
 
-                doc = await load_tabular(artifact_id, runtime)
-                view = TabularView(doc)
                 s = int(start)
                 n = int(count)
+                # F4: cap caller-supplied row count.
+                if n > self._settings.max_table_rows:
+                    raise resource_error_from_exception(
+                        ValueError(
+                            f"count {n} exceeds max_table_rows {self._settings.max_table_rows}"
+                        ),
+                        context=(
+                            f"kaos://tabular/{artifact_id}/table/{table_name}/rows/{start}/{count}"
+                        ),
+                    )
+
+                doc = await load_tabular(
+                    artifact_id, runtime, max_bytes=self._settings.max_resource_bytes
+                )
+                view = TabularView(doc)
                 sliced = view.table_slice(unquote(table_name), s, s + n)
                 return serialize_tsv(sliced)
             except Exception as exc:

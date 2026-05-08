@@ -110,7 +110,10 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
     # 4. Create MCP app and read resources via in-memory session
     app = create_app(runtime)
 
-    async with create_connected_server_and_client_session(app) as session:
+    # F1: identify the test client with the artifact's session id so the
+    # server-side caller-session check (clientInfo.name fallback) succeeds.
+    client_info = types.Implementation(name="pipeline-test", version="0.0.0")
+    async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # List resource templates
         templates_result = await session.list_resource_templates()
         template_uris = {t.uriTemplate for t in templates_result.resourceTemplates}
@@ -193,7 +196,8 @@ async def test_content_node_resource(tmp_path) -> None:
     manifest = await store_document(doc, runtime, context, name="node-doc")
     app = create_app(runtime)
 
-    async with create_connected_server_and_client_session(app) as session:
+    client_info = types.Implementation(name="node-test", version="0.0.0")
+    async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # Read first body node (should be heading "Executive Summary")
         node_result = await session.read_resource(
             AnyUrl(f"kaos://content/{manifest.artifact_id}/node/body%2F0")
@@ -253,7 +257,8 @@ async def test_builder_document_through_mcp(tmp_path) -> None:
 
     app = create_app(runtime)
 
-    async with create_connected_server_and_client_session(app) as session:
+    client_info = types.Implementation(name="builder-test", version="0.0.0")
+    async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # Read outline
         outline_result = await session.read_resource(
             AnyUrl(f"kaos://content/{manifest.artifact_id}/outline")

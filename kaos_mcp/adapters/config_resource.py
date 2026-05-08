@@ -1,7 +1,21 @@
-"""Server configuration resource with automatic secret redaction."""
+"""Server configuration resource with automatic secret redaction.
+
+audit-02 F3 hardening:
+
+- Always replace secret values with the constant ``"***"`` instead of
+  exposing the first / last four characters. Even short prefixes can
+  enable targeted lookups against credential dumps.
+- Redact by **field name** as well as by ``SecretStr`` type. Matches any
+  field whose name contains ``token``, ``password``, ``api_key``,
+  ``secret``, ``credential``, or ``auth`` (case-insensitive). Catches
+  legacy modules that store credentials as plain ``str``.
+- The resource itself is opt-in via ``KaosMCPSettings.expose_server_config``;
+  see ``app.create_app``. This file only handles redaction.
+"""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from kaos_core import KaosRuntime
@@ -10,16 +24,23 @@ from pydantic_settings import BaseSettings
 
 from kaos_mcp.config import KaosMCPSettings
 
+REDACTED = "***"
+
+# Field-name patterns that imply a credential, regardless of declared type.
+_SECRET_NAME_RE = re.compile(
+    r"(?:^|_)(?:token|password|api_?key|secret|credential|auth(?:_?token)?)(?:$|_)",
+    re.IGNORECASE,
+)
+
+
+def _is_secret_name(field_name: str) -> bool:
+    return bool(_SECRET_NAME_RE.search(field_name))
+
 
 def _redact_value(value: Any) -> Any:
-    """Redact secret values for safe display."""
+    """Redact a SecretStr value to the constant REDACTED token."""
     if isinstance(value, SecretStr):
-        secret = value.get_secret_value()
-        if not secret:
-            return None
-        if len(secret) <= 8:
-            return "***"
-        return f"{secret[:4]}...{secret[-4:]}"
+        return REDACTED if value.get_secret_value() else None
     return value
 
 
@@ -31,13 +52,16 @@ def _redact_dict(data: dict[str, Any]) -> dict[str, Any]:
             result[key] = _redact_dict(value)
         elif isinstance(value, SecretStr):
             result[key] = _redact_value(value)
+        elif _is_secret_name(key) and value is not None:
+            # Field name suggests a credential — redact regardless of type.
+            result[key] = REDACTED
         else:
             result[key] = value
     return result
 
 
 def _dump_settings(settings: BaseSettings) -> dict[str, Any]:
-    """Dump settings to dict with SecretStr fields redacted."""
+    """Dump settings to dict with secret-named or SecretStr fields redacted."""
     raw: dict[str, Any] = {}
     for field_name in type(settings).model_fields:
         value = getattr(settings, field_name)
@@ -45,6 +69,8 @@ def _dump_settings(settings: BaseSettings) -> dict[str, Any]:
             raw[field_name] = _redact_value(value)
         elif isinstance(value, dict):
             raw[field_name] = _redact_dict(value)
+        elif _is_secret_name(field_name) and value is not None:
+            raw[field_name] = REDACTED
         else:
             raw[field_name] = value
     return raw

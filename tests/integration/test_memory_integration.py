@@ -78,7 +78,11 @@ async def test_memory_client_reads_binary_artifact_and_reports_missing_handles(
     )
     app = create_app(runtime, settings)
 
-    async with create_connected_server_and_client_session(app) as session:
+    # F1: identify the test client with the artifact's session id so the
+    # server-side ``caller_session_id`` (clientInfo.name fallback) matches
+    # what ``create_from_path`` registered above.
+    client_info = types.Implementation(name="binary-session", version="0.0.0")
+    async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         result = await session.read_resource(AnyUrl(manifest.body_uri))
         with pytest.raises(McpError, match="Unknown artifact"):
             await session.read_resource(AnyUrl("kaos://artifacts/missing/body"))
@@ -138,9 +142,12 @@ async def test_memory_client_respects_roots_and_chunked_artifact_reads(tmp_path)
 
     blocked_roots: ListRootsFnT = _blocked_roots  # ty: ignore[invalid-assignment]
 
+    # F1: identify the test client with the artifact's session id.
+    client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(
         app,
         list_roots_callback=allowed_roots,
+        client_info=client_info,
     ) as session:
         with pytest.raises(McpError, match="inline read limit"):
             await session.read_resource(AnyUrl(manifest.body_uri))
@@ -150,6 +157,7 @@ async def test_memory_client_respects_roots_and_chunked_artifact_reads(tmp_path)
     async with create_connected_server_and_client_session(
         app,
         list_roots_callback=blocked_roots,
+        client_info=client_info,
     ) as session:
         with pytest.raises(McpError, match="roots policy"):
             await session.read_resource(AnyUrl(manifest.manifest_uri))

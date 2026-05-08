@@ -85,6 +85,7 @@ def _cmd_setup(args: argparse.Namespace) -> None:
                 skip_node=getattr(args, "skip_node", False),
                 skip_python=getattr(args, "skip_python", False),
                 dry_run=getattr(args, "dry_run", False),
+                confirm=getattr(args, "yes", False),
             )
         elif target == "claude":
             actions = setup_claude(scope=getattr(args, "scope", "project"), force=force)
@@ -180,6 +181,14 @@ def main(argv: list[str] | None = None) -> None:
     p_setup.add_argument("--skip-node", action="store_true", help="Skip Node.js/fnm/pnpm")
     p_setup.add_argument("--skip-python", action="store_true", help="Skip Python/uv")
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be installed")
+    p_setup.add_argument(
+        "--yes",
+        action="store_true",
+        help=(
+            "Confirm execution of remote installer pipelines (curl | sh). "
+            "Required by 'setup env' before any installer is fetched. F6."
+        ),
+    )
 
     # serve
     p_serve = sub.add_parser("serve", help="Start MCP server with all available modules")

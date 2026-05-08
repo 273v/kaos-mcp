@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -37,10 +36,17 @@ def _find_kaos_dir() -> Path:
 
 
 def _server_entries(kaos_dir: Path) -> dict[str, dict[str, Any]]:
-    """Generate MCP server entries for all KAOS modules."""
+    """Generate MCP server entries for all KAOS modules.
+
+    audit-02 F5: secrets are written as env-var references
+    (``${GOVINFO_API_KEY}``) rather than resolved values, so the agent
+    runtime expands them at launch time and the project-local config
+    files never carry plaintext credentials. Claude Code, Codex CLI, and
+    Gemini CLI all support ``$VAR`` / ``${VAR}`` expansion in MCP server
+    entries.
+    """
     d = str(kaos_dir)
-    govinfo_key = os.environ.get("GOVINFO_API_KEY", "")
-    env_ref = {"GOVINFO_API_KEY": govinfo_key} if govinfo_key else {}
+    env_ref = {"GOVINFO_API_KEY": "${GOVINFO_API_KEY}"}
 
     return {
         "kaos-pdf": {
