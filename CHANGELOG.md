@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signal handlers, MCP `_meta` keys). Also lands the existing
   bandit hook in pre-commit (it was only in CI before). Both pass
   clean. Mirrors the rollout from kaos-core.
+### Changed
+
+- **uv.lock bumped to ``kaos-core`` 0.1.0a4 → 0.1.0a5.** Pure
+  lockfile refresh; ``kaos-core`` 0.1.0a5 adds CLI verbs for
+  credential management (F2.5) + per-package compatibility fixes.
+  kaos-mcp's public API is unaffected. 143 unit tests pass.
 
 ## [0.1.0a2] — 2026-05-08
 
