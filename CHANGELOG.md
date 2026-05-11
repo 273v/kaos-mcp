@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drift in `_KNOWN_TOOL_COUNTS["kaos-content"]`: bumped from 9 → 17 to match
+  `kaos-content` 0.1.0a6 paired with `kaos-core` 0.1.0a5. The
+  compatibility-tool layer in `kaos-content` grew from 9 to 17
+  registered tools across 0.1.0a5/a6 (new entity-filter and corpus
+  analysis tools). The drift-guard test
+  (`tests/unit/test_management.py::TestStatus::test_known_tool_counts_match_live_register`)
+  was failing in CI's `min-deps` job because under
+  `--resolution=lowest-direct` both kaos-content and kaos-core drop
+  to their floors, and the older-kaos-core path exposes more
+  compatibility tools. Files: `kaos_mcp/management/status.py`.
+
 ## [0.1.0a3] — 2026-05-11
 
 ### Fixed
