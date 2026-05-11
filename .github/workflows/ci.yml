@@ -189,6 +189,16 @@ jobs:
         run: uv sync --group dev --resolution=lowest-direct --python 3.13
 
       - name: Run unit tests
+        # Skip the _KNOWN_TOOL_COUNTS drift guard under min-deps:
+        # --resolution=lowest-direct drops every dependency to its
+        # declared floor — including kaos-core — and the older-
+        # kaos-core path makes kaos-content's register function emit
+        # more compatibility tools than the canonical lockfile pairing
+        # does. The dict documents the count under the LOCKED cross-
+        # product; the regular CI matrix runs this same test without
+        # the skip, so real drift still gets caught.
+        env:
+          KAOS_SKIP_TOOL_COUNT_DRIFT_GUARD: "1"
         run: |
           uv run pytest tests/unit/ \
             --no-cov \

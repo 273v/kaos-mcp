@@ -140,8 +140,26 @@ class TestStatus:
         hard-coded count matches what its register_func would actually
         register against a fresh runtime. Catches the audit-01 MCP-06
         drift recurring.
+
+        Skipped when ``KAOS_SKIP_TOOL_COUNT_DRIFT_GUARD=1`` is set.
+        The min-deps CI job sets it because
+        ``--resolution=lowest-direct`` drops every dependency to its
+        declared floor — including kaos-core — and the older-kaos-core
+        path makes kaos-content's ``register_content_tools`` register
+        more compatibility tools than the canonical lockfile pairing
+        does. The dict documents the count under the LOCKED version
+        cross-product; it doesn't claim to hold across every arbitrary
+        version pair. Real drift gets caught by the regular matrix
+        legs, which don't set this skip variable.
         """
         import importlib
+        import os
+
+        if os.environ.get("KAOS_SKIP_TOOL_COUNT_DRIFT_GUARD") == "1":
+            pytest.skip(
+                "KAOS_SKIP_TOOL_COUNT_DRIFT_GUARD=1 (set by the min-deps "
+                "CI gate); see test docstring for why."
+            )
 
         from kaos_core import KaosRuntime
 
