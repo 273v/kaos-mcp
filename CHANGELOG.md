@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Drift in `_KNOWN_TOOL_COUNTS["kaos-content"]`: bumped from 8 → 9 to match
+  `kaos-content` 0.1.0a4, which added `DedupSemanticTool`. The drift-guard
+  test (`tests/unit/test_management.py::TestStatus::test_known_tool_counts_match_live_register`)
+  was failing in the `min-deps` CI job. Files: `kaos_mcp/management/status.py`.
+
 ## [0.1.0a2] — 2026-05-08
 
 Patch release closing the eight findings in `docs/audit-02/kaos-mcp.md`

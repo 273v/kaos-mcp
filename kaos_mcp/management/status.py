@@ -37,7 +37,7 @@ class ModuleInfo:
 # count by ``tests/unit/test_management.py::TestModuleStatus``.
 _KNOWN_TOOL_COUNTS: dict[str, int] = {
     "kaos-core": 10,
-    "kaos-content": 8,
+    "kaos-content": 9,
     "kaos-nlp-core": 17,
     "kaos-graph": 17,
     "kaos-pdf": 7,
