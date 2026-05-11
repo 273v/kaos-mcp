@@ -10,16 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Drift in `_KNOWN_TOOL_COUNTS["kaos-content"]`: bumped from 9 → 17 to match
-  `kaos-content` 0.1.0a6 paired with `kaos-core` 0.1.0a5. The
-  compatibility-tool layer in `kaos-content` grew from 9 to 17
-  registered tools across 0.1.0a5/a6 (new entity-filter and corpus
-  analysis tools). The drift-guard test
-  (`tests/unit/test_management.py::TestStatus::test_known_tool_counts_match_live_register`)
-  was failing in CI's `min-deps` job because under
-  `--resolution=lowest-direct` both kaos-content and kaos-core drop
-  to their floors, and the older-kaos-core path exposes more
-  compatibility tools. Files: `kaos_mcp/management/status.py`.
+- Drift-guard test (`test_known_tool_counts_match_live_register`)
+  now respects `KAOS_SKIP_TOOL_COUNT_DRIFT_GUARD=1`. The min-deps CI
+  job sets it because `--resolution=lowest-direct` drops every
+  dependency to its declared floor — including kaos-core — and the
+  older-kaos-core path makes kaos-content's `register_content_tools`
+  register more compatibility tools than the canonical lockfile
+  pairing does. The dict documents the count under the locked
+  cross-product; it doesn't claim to hold across every arbitrary
+  version pair. Real drift still gets caught by the regular matrix
+  legs, which don't set this skip variable.
+  (Supersedes an earlier in-this-release pass that wrongly bumped
+  the dict to 17 based on a force-upgraded local venv; the canonical
+  lockfile resolution gives 9 tools, not 17.) Files:
+  `kaos_mcp/management/status.py`, `tests/unit/test_management.py`,
+  `.github/workflows/ci.yml`.
 
 ## [0.1.0a3] — 2026-05-11
 
