@@ -7,8 +7,10 @@ from pathlib import Path
 
 import pytest
 
+import kaos_mcp.management.doctor as doctor_module
 from kaos_mcp.management.cli import main
 from kaos_mcp.management.doctor import Check, DoctorReport, format_report, run_doctor
+from kaos_mcp.management.env import MIN_HARDENED_PNPM_VERSION, _version_lt
 from kaos_mcp.management.setup import _find_kaos_dir, _server_entries
 from kaos_mcp.management.status import ModuleInfo, format_status, get_module_status
 
@@ -66,6 +68,46 @@ class TestDoctor:
         report = run_doctor()
         agentic_checks = [c for c in report.checks if c.category == "agentic"]
         assert len(agentic_checks) > 0
+
+    def test_pnpm_check_warns_when_version_is_too_old(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            doctor_module.shutil,
+            "which",
+            lambda name: "/usr/bin/pnpm" if name == "pnpm" else None,
+        )
+        monkeypatch.setattr(doctor_module, "_run_version_cmd", lambda *cmd: "10.10.0")
+        report = DoctorReport()
+
+        doctor_module._check_pnpm(report)
+
+        pnpm_check = report.checks[0]
+        assert pnpm_check.status == "warn"
+        assert f"need >= {MIN_HARDENED_PNPM_VERSION}" in pnpm_check.message
+
+    def test_pnpm_check_accepts_hardened_version(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            doctor_module.shutil,
+            "which",
+            lambda name: "/usr/bin/pnpm" if name == "pnpm" else None,
+        )
+        monkeypatch.setattr(
+            doctor_module,
+            "_run_version_cmd",
+            lambda *cmd: MIN_HARDENED_PNPM_VERSION,
+        )
+        report = DoctorReport()
+
+        doctor_module._check_pnpm(report)
+
+        pnpm_check = report.checks[0]
+        assert pnpm_check.status == "ok"
+        assert MIN_HARDENED_PNPM_VERSION in pnpm_check.message
+
+    def test_version_lt_parses_semver_prefixes(self) -> None:
+        assert _version_lt("10.32.0", MIN_HARDENED_PNPM_VERSION)
+        assert not _version_lt("11.1.0+sha512.example", MIN_HARDENED_PNPM_VERSION)
 
     def test_format_report(self) -> None:
         report = DoctorReport(
@@ -187,6 +229,80 @@ class TestStatus:
 # ---------------------------------------------------------------------------
 
 
+class TestSetupEnv:
+    def test_setup_env_dry_run_reports_installer_urls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """F6: dry-run prints the exact installer URL it would fetch."""
+        from kaos_mcp.management import env as env_module
+
+        # Force the "no script found" branch so direct installers are
+        # reported, and pretend uv/fnm aren't installed.
+        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
+        monkeypatch.setattr(env_module, "_which", lambda _name: None)
+
+        actions = env_module.setup_env(dry_run=True)
+        joined = "\n".join(actions)
+        assert env_module.UV_INSTALLER_URL in joined
+        assert env_module.FNM_INSTALLER_URL in joined
+
+    def test_setup_env_without_yes_does_not_fetch(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """F6: ``confirm=False`` MUST NOT invoke any subprocess.run for
+        installer pipelines. Reports what would run instead."""
+        from kaos_mcp.management import env as env_module
+
+        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
+        monkeypatch.setattr(env_module, "_which", lambda _name: None)
+
+        called: list[list[str]] = []
+
+        def _no_subprocess(cmd: list[str], **_kw: object) -> object:
+            called.append(cmd)
+            raise AssertionError(f"subprocess.run was invoked without --yes confirmation: {cmd}")
+
+        monkeypatch.setattr(env_module.subprocess, "run", _no_subprocess)
+
+        actions = env_module.setup_env(confirm=False, dry_run=False)
+        # Confirmation gate should produce a "requires --yes" message.
+        assert any("requires --yes" in a for a in actions), actions
+        assert called == []
+
+    def test_setup_env_dry_run_activates_hardened_pnpm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from kaos_mcp.management import env as env_module
+
+        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
+        monkeypatch.setattr(
+            env_module,
+            "_which",
+            lambda name: "/usr/bin/corepack" if name == "corepack" else None,
+        )
+
+        actions = env_module.setup_env(skip_python=True, dry_run=True)
+
+        assert f"Would activate pnpm {MIN_HARDENED_PNPM_VERSION} via corepack" in actions
+
+    def test_find_setup_script_does_not_use_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """F6: drop the cwd-based discovery — only walk from __file__."""
+        from kaos_mcp.management import env as env_module
+
+        # Plant a fake setup-env.sh in cwd. The hardened function must
+        # NOT pick it up.
+        scripts_dir = tmp_path / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "setup-env.sh").write_text("#!/bin/bash\necho fake")
+        monkeypatch.chdir(tmp_path)
+
+        result = env_module._find_setup_script()
+        # Either returns None (no monorepo present) or returns the
+        # __file__-derived path. In either case it must not equal the
+        # cwd-planted decoy.
+        assert result != scripts_dir / "setup-env.sh"
+
+
 class TestSetup:
     @pytest.fixture(autouse=True)
     def _require_monorepo_layout(self) -> None:
@@ -246,62 +362,6 @@ class TestSetup:
         kaos_dir = _find_kaos_dir()
         entries = _server_entries(kaos_dir)
         assert entries["kaos-source"]["env"]["GOVINFO_API_KEY"] == "${GOVINFO_API_KEY}"
-
-    def test_setup_env_dry_run_reports_installer_urls(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """F6: dry-run prints the exact installer URL it would fetch."""
-        from kaos_mcp.management import env as env_module
-
-        # Force the "no script found" branch so direct installers are
-        # reported, and pretend uv/fnm aren't installed.
-        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
-        monkeypatch.setattr(env_module, "_which", lambda _name: None)
-
-        actions = env_module.setup_env(dry_run=True)
-        joined = "\n".join(actions)
-        assert env_module.UV_INSTALLER_URL in joined
-        assert env_module.FNM_INSTALLER_URL in joined
-
-    def test_setup_env_without_yes_does_not_fetch(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """F6: ``confirm=False`` MUST NOT invoke any subprocess.run for
-        installer pipelines. Reports what would run instead."""
-        from kaos_mcp.management import env as env_module
-
-        monkeypatch.setattr(env_module, "_find_setup_script", lambda: None)
-        monkeypatch.setattr(env_module, "_which", lambda _name: None)
-
-        called: list[list[str]] = []
-
-        def _no_subprocess(cmd: list[str], **_kw: object) -> object:
-            called.append(cmd)
-            raise AssertionError(f"subprocess.run was invoked without --yes confirmation: {cmd}")
-
-        monkeypatch.setattr(env_module.subprocess, "run", _no_subprocess)
-
-        actions = env_module.setup_env(confirm=False, dry_run=False)
-        # Confirmation gate should produce a "requires --yes" message.
-        assert any("requires --yes" in a for a in actions), actions
-        assert called == []
-
-    def test_find_setup_script_does_not_use_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """F6: drop the cwd-based discovery — only walk from __file__."""
-        from kaos_mcp.management import env as env_module
-
-        # Plant a fake setup-env.sh in cwd. The hardened function must
-        # NOT pick it up.
-        scripts_dir = tmp_path / "scripts"
-        scripts_dir.mkdir()
-        (scripts_dir / "setup-env.sh").write_text("#!/bin/bash\necho fake")
-        monkeypatch.chdir(tmp_path)
-
-        result = env_module._find_setup_script()
-        # Either returns None (no monorepo present) or returns the
-        # __file__-derived path. In either case it must not equal the
-        # cwd-planted decoy.
-        assert result != scripts_dir / "setup-env.sh"
 
     def test_setup_claude_writes_env_reference_not_secret(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

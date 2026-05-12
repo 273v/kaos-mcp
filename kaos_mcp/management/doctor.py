@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from kaos_mcp.management.env import MIN_HARDENED_PNPM_VERSION, _version_lt
+
 
 @dataclass
 class Check:
@@ -269,7 +271,20 @@ def _check_pnpm(report: DoctorReport) -> None:
     pnpm = shutil.which("pnpm")
     if pnpm:
         version = _run_version_cmd("pnpm", "--version")
-        report.checks.append(Check("pnpm", "ok", f"pnpm {version}", "environment"))
+        if _version_lt(version, MIN_HARDENED_PNPM_VERSION):
+            report.checks.append(
+                Check(
+                    "pnpm",
+                    "warn",
+                    (
+                        f"pnpm {version} (need >= {MIN_HARDENED_PNPM_VERSION} for "
+                        "KAOS Node supply-chain hardening; run: kaos setup env)"
+                    ),
+                    "environment",
+                )
+            )
+        else:
+            report.checks.append(Check("pnpm", "ok", f"pnpm {version}", "environment"))
     else:
         report.checks.append(
             Check("pnpm", "warn", "pnpm not found (run: kaos setup env)", "environment")
