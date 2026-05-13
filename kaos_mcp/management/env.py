@@ -39,6 +39,7 @@ from typing import Any
 
 UV_INSTALLER_URL = "https://astral.sh/uv/install.sh"
 FNM_INSTALLER_URL = "https://fnm.vercel.app/install"
+MIN_HARDENED_PNPM_VERSION = "11.1.0"
 
 
 def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -48,6 +49,30 @@ def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
 
 def _which(name: str) -> str | None:
     return shutil.which(name)
+
+
+def _parse_semver(version: str) -> tuple[int, int, int] | None:
+    """Parse a simple semver prefix from command output."""
+    match = version.strip().lstrip("v").split()[0].split("+", 1)[0].split("-", 1)[0]
+    parts = match.split(".")
+    if len(parts) < 2:
+        return None
+    try:
+        major = int(parts[0])
+        minor = int(parts[1])
+        patch = int(parts[2]) if len(parts) > 2 else 0
+    except ValueError:
+        return None
+    return major, minor, patch
+
+
+def _version_lt(current: str, minimum: str) -> bool:
+    """Return True when ``current`` is lower than ``minimum``."""
+    parsed_current = _parse_semver(current)
+    parsed_minimum = _parse_semver(minimum)
+    if parsed_current is None or parsed_minimum is None:
+        return True
+    return parsed_current < parsed_minimum
 
 
 def _find_setup_script() -> Path | None:
@@ -69,6 +94,7 @@ def setup_env(
     *,
     python_version: str = "3.14",
     node_version: str = "24",
+    pnpm_version: str = MIN_HARDENED_PNPM_VERSION,
     skip_node: bool = False,
     skip_python: bool = False,
     dry_run: bool = False,
@@ -91,6 +117,7 @@ def setup_env(
             script,
             python_version=python_version,
             node_version=node_version,
+            target_pnpm_version=pnpm_version,
             skip_node=skip_node,
             skip_python=skip_python,
             dry_run=dry_run,
@@ -99,6 +126,7 @@ def setup_env(
     return _setup_direct(
         python_version=python_version,
         node_version=node_version,
+        target_pnpm_version=pnpm_version,
         skip_node=skip_node,
         skip_python=skip_python,
         dry_run=dry_run,
@@ -111,6 +139,7 @@ def _setup_via_script(
     *,
     python_version: str,
     node_version: str,
+    target_pnpm_version: str,
     skip_node: bool,
     skip_python: bool,
     dry_run: bool,
@@ -119,6 +148,7 @@ def _setup_via_script(
     cmd = ["bash", str(script)]
     cmd.extend(["--python", python_version])
     cmd.extend(["--node", node_version])
+    cmd.extend(["--pnpm", target_pnpm_version])
     if skip_node:
         cmd.append("--skip-node")
     if skip_python:
@@ -137,6 +167,7 @@ def _setup_direct(
     *,
     python_version: str,
     node_version: str,
+    target_pnpm_version: str,
     skip_node: bool,
     skip_python: bool,
     dry_run: bool,
@@ -222,18 +253,42 @@ def _setup_direct(
                     else f"Node.js {node_version} already available"
                 )
 
-        # Install pnpm
-        if not _which("pnpm") and _which("corepack"):
-            if dry_run:
-                actions.append("Would install pnpm via corepack")
-            else:
-                result = _run(["corepack", "enable", "pnpm"])
+        # Install pnpm. KAOS requires pnpm 11.1+ for dependency cooldowns,
+        # build-script allowlists, exotic-subdependency blocking, and
+        # signature auditing.
+        installed_pnpm_version = ""
+        if _which("pnpm"):
+            result = _run(["pnpm", "--version"])
+            installed_pnpm_version = result.stdout.strip() or result.stderr.strip()
+
+        pnpm_missing_or_old = not installed_pnpm_version or _version_lt(
+            installed_pnpm_version, target_pnpm_version
+        )
+
+        if pnpm_missing_or_old:
+            if _which("corepack"):
+                if dry_run:
+                    actions.append(f"Would activate pnpm {target_pnpm_version} via corepack")
+                else:
+                    enable = _run(["corepack", "enable", "pnpm"])
+                    prepare = _run(
+                        ["corepack", "prepare", f"pnpm@{target_pnpm_version}", "--activate"]
+                    )
+                    actions.append(
+                        f"pnpm {target_pnpm_version} activated via corepack"
+                        if enable.returncode == 0 and prepare.returncode == 0
+                        else f"Failed to activate pnpm {target_pnpm_version}"
+                    )
+            elif installed_pnpm_version:
                 actions.append(
-                    "pnpm installed via corepack"
-                    if result.returncode == 0
-                    else "Failed to install pnpm"
+                    f"pnpm {installed_pnpm_version} is older than {target_pnpm_version}; "
+                    "install corepack or rerun after upgrading Node.js"
                 )
-        elif _which("pnpm"):
-            actions.append("pnpm already installed")
+            else:
+                actions.append(
+                    f"pnpm not installed; install corepack or pnpm >= {target_pnpm_version}"
+                )
+        else:
+            actions.append(f"pnpm already installed ({installed_pnpm_version})")
 
     return actions

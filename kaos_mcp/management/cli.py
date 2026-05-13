@@ -3,6 +3,7 @@
 Usage:
     kaos doctor [--json]
     kaos status [--json]
+    kaos setup env [--python-version VERSION] [--node-version VERSION] [--pnpm-version VERSION]
     kaos setup claude [--scope project|user|local] [--force]
     kaos setup codex [--force]
     kaos setup gemini [--scope project|user] [--force]
@@ -77,11 +78,12 @@ def _cmd_setup(args: argparse.Namespace) -> None:
 
     try:
         if target == "env":
-            from kaos_mcp.management.env import setup_env
+            from kaos_mcp.management.env import MIN_HARDENED_PNPM_VERSION, setup_env
 
             actions = setup_env(
                 python_version=getattr(args, "python_version", "3.14"),
                 node_version=getattr(args, "node_version", "24"),
+                pnpm_version=getattr(args, "pnpm_version", MIN_HARDENED_PNPM_VERSION),
                 skip_node=getattr(args, "skip_node", False),
                 skip_python=getattr(args, "skip_python", False),
                 dry_run=getattr(args, "dry_run", False),
@@ -143,6 +145,8 @@ def _cmd_serve(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the unified kaos CLI."""
+    from kaos_mcp.management.env import MIN_HARDENED_PNPM_VERSION
+
     parser = argparse.ArgumentParser(
         prog="kaos",
         description="KAOS platform management — health checks, setup, and configuration",
@@ -178,6 +182,11 @@ def main(argv: list[str] | None = None) -> None:
     # env-specific options
     p_setup.add_argument("--python-version", default="3.14", help="Python version (default: 3.14)")
     p_setup.add_argument("--node-version", default="24", help="Node.js version (default: 24)")
+    p_setup.add_argument(
+        "--pnpm-version",
+        default=MIN_HARDENED_PNPM_VERSION,
+        help=f"pnpm version (default: {MIN_HARDENED_PNPM_VERSION})",
+    )
     p_setup.add_argument("--skip-node", action="store_true", help="Skip Node.js/fnm/pnpm")
     p_setup.add_argument("--skip-python", action="store_true", help="Skip Python/uv")
     p_setup.add_argument("--dry-run", action="store_true", help="Show what would be installed")
