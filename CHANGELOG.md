@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.1.0a4] — 2026-05-16
+
 ### Fixed
 
 - Drift-guard test (`test_known_tool_counts_match_live_register`)
@@ -25,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lockfile resolution gives 9 tools, not 17.) Files:
   `kaos_mcp/management/status.py`, `tests/unit/test_management.py`,
   `.github/workflows/ci.yml`.
+
+### Infrastructure
+
+- Public-PR CI workflows hardened (pinned actions, restricted token
+  scope) and dependabot migrated to the uv ecosystem with a 72-hour
+  cooldown matching the rest of the kaos-* org.
+- `pnpm setup` step in CI workflows defaults hardened.
+- CycloneDX SBOM ships as a release asset (F8).
+- CODEOWNERS expansion + OpenSSF Scorecard + Dependabot
+  governance rollup.
+
 
 ## [0.1.0a3] — 2026-05-11
 
