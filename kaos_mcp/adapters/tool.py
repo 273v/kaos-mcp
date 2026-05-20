@@ -137,7 +137,14 @@ class ToolAdapter:
         )
         return inspect.Signature(parameters=parameters)
 
-    def _annotation_for(self, schema_type: str) -> object:
+    def _annotation_for(self, schema_type: str | list[str]) -> object:
+        # ParameterSchema.type widened to `str | list[str]` in kaos-core
+        # 0.1.0a12 to allow JSON-Schema-style type unions. We don't try to
+        # synthesize a Python union annotation here — FastMCP only needs a
+        # placeholder annotation for signature generation, so an Any fallback
+        # is the safe, contract-preserving choice for the list case.
+        if isinstance(schema_type, list):
+            return Any
         return _TYPE_MAP.get(schema_type, Any)
 
     def _default_for(self, parameter: Any) -> Any:

@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [0.1.0a5] — 2026-05-20
+
+### Changed
+
+- **kaos-core floor raised to `>=0.1.0a12`** (post-URI-redesign +
+  Capability type). WU-F.3 of the 0.1.0 GA plan; catch-up to
+  kaos-core 0.1.0a12.
+- `kaos_mcp.adapters.tool.ToolAdapter._annotation_for` now accepts
+  `str | list[str]` for the parameter schema type, matching the widened
+  `kaos_core.types.parameters.ParameterSchema.type` introduced in
+  kaos-core 0.1.0a12 (JSON-Schema-style type unions). The list form
+  falls back to `Any` for FastMCP signature generation.
+- `_KNOWN_TOOL_COUNTS['kaos-content']` bumped 9 -> 17. kaos-content
+  0.1.0a12 registers the date / money / percent / duration / number
+  sentence-extraction tools, plus the corpus summarize / narrow tools,
+  on top of the previously-known nine. The drift-guard test now passes
+  under the canonical lockfile pairing.
+- Refresh `uv.lock`: kaos-core 0.1.0a10 -> 0.1.0a12, kaos-content
+  0.1.0a4 -> 0.1.0a12, pydantic 2.12.5 -> 2.13.4, pydantic-core
+  2.41.5 -> 2.46.4, pydantic-settings 2.13.1 -> 2.14.1, ruff
+  0.15.7 -> 0.15.13, ty 0.0.34 -> 0.0.36.
+
+
 ## [0.1.0a4] — 2026-05-16
 
 ### Fixed
