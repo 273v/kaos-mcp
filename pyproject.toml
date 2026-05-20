@@ -39,8 +39,8 @@ classifiers = [
 ]
 dependencies = [
   "httpx>=0.28.1",
-  "kaos-content[markdown]>=0.1.0a2,<0.2",
-  "kaos-core>=0.1.0a12,<0.2",
+  "kaos-content[markdown]>=0.1.0rc1,<0.2",
+  "kaos-core>=0.1.0rc1,<0.2",
   "mcp[cli]>=1.26.0",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.8.1",
