@@ -35,9 +35,9 @@ prompts) is included in the base install. Sibling KAOS modules are
 ## Install
 
 ```bash
-uv add kaos-mcp
+uv add "kaos-mcp>=0.1.0"
 # or
-pip install kaos-mcp
+pip install "kaos-mcp>=0.1.0"
 ```
 
 `kaos-mcp` requires Python **3.13** or newer (3.14 is supported). The
@@ -142,10 +142,19 @@ to compose several modules into one server.
 |---|---|
 | **Python** | 3.13, 3.14 |
 | **OS** | Linux, macOS, Windows (pure Python — `Operating System :: OS Independent`; no native code) |
-| **Maturity** | Alpha (`Development Status :: 3 - Alpha`). The public API is documented in `kaos_mcp.__all__`: `KaosMCPServer`, `KaosMCPSettings`, `create_app`, `__version__`. |
+| **Maturity** | 0.1.0 GA. The public API is documented in `kaos_mcp.__all__`: `KaosMCPServer`, `KaosMCPSettings`, `create_app`, `__version__`. |
 | **Stability policy** | Pre-1.0: minor bumps may change behaviour. Every change is documented in [`CHANGELOG.md`](CHANGELOG.md). The MCP wire surface (tool annotations, resource URI templates, the `kaos://` scheme, `_meta.kaos_config`) and the `KAOS_MCP_*` environment-variable namespace are public API and follow the same policy. After 1.0 we follow semver. |
 | **Test coverage** | 104 unit tests (`tests/unit/`) covering config, adapters, log bridge, management commands, and the FastMCP wiring; plus an integration suite (`tests/integration/`) that exercises in-memory MCP sessions and embedded streamable-HTTP mounts end-to-end. |
 | **Type checker** | Validated with [`ty`](https://docs.astral.sh/ty/), Astral's Python type checker. |
+
+## Documentation
+
+Per-package reference: see in-tree docstrings and
+[CHANGELOG.md](CHANGELOG.md).
+
+Cross-cutting KAOS guides (agentic patterns, persona presets, settings
+policy, citations, MCP data flow, migration to 0.1.0 GA) live in
+[`kaos-modules/docs/guides/`](https://github.com/273v/kaos-modules/tree/main/docs/guides).
 
 ## Companion packages
 
