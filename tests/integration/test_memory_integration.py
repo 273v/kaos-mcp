@@ -15,6 +15,28 @@ from pydantic import AnyUrl
 from kaos_mcp import create_app
 
 
+async def _read_resource_as_session(session: Any, uri: str, session_id: str) -> Any:
+    """audit-04 F-001: ``ctx.client_id`` (the only session identity the
+    secured ``caller_session_id`` honors) is sourced from
+    ``_meta.client_id`` on the request. The stock
+    ``ClientSession.read_resource`` does not accept ``_meta``, so the
+    integration tests send the request directly with the meta envelope
+    populated.
+    """
+    # RequestParams.Meta declares ``extra="allow"`` so arbitrary keys
+    # (incl. ``client_id``) round-trip into the wire-level _meta envelope.
+    # ty doesn't see the extra-allow contract, so build via dict.
+    meta = types.RequestParams.Meta.model_validate({"client_id": session_id})
+    return await session.send_request(
+        types.ClientRequest(
+            types.ReadResourceRequest(
+                params=types.ReadResourceRequestParams(uri=AnyUrl(uri), _meta=meta)
+            )
+        ),
+        types.ReadResourceResult,
+    )
+
+
 @pytest.mark.integration
 async def test_memory_client_call_preserves_structured_tool_result(app) -> None:
     progress_updates: list[tuple[float, float | None, str | None]] = []
@@ -78,14 +100,15 @@ async def test_memory_client_reads_binary_artifact_and_reports_missing_handles(
     )
     app = create_app(runtime, settings)
 
-    # F1: identify the test client with the artifact's session id so the
-    # server-side ``caller_session_id`` (clientInfo.name fallback) matches
-    # what ``create_from_path`` registered above.
-    client_info = types.Implementation(name="binary-session", version="0.0.0")
+    # audit-04 F-001: identify the test client with the artifact's session
+    # id via ``_meta.client_id`` (the only path ``caller_session_id``
+    # honors after the clientInfo.name fallback was removed).
+    session_id = "binary-session"
+    client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(app, client_info=client_info) as session:
-        result = await session.read_resource(AnyUrl(manifest.body_uri))
+        result = await _read_resource_as_session(session, manifest.body_uri, session_id)
         with pytest.raises(McpError, match="Unknown artifact"):
-            await session.read_resource(AnyUrl("kaos://artifacts/missing/body"))
+            await _read_resource_as_session(session, "kaos://artifacts/missing/body", session_id)
 
     first = result.contents[0]
     assert isinstance(first, types.BlobResourceContents)
@@ -142,7 +165,9 @@ async def test_memory_client_respects_roots_and_chunked_artifact_reads(tmp_path)
 
     blocked_roots: ListRootsFnT = _blocked_roots  # ty: ignore[invalid-assignment]
 
-    # F1: identify the test client with the artifact's session id.
+    # audit-04 F-001: identify the test client with the artifact's
+    # session id via ``_meta.client_id`` (per-request meta is now the
+    # only honored identity path).
     client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(
         app,
@@ -150,9 +175,11 @@ async def test_memory_client_respects_roots_and_chunked_artifact_reads(tmp_path)
         client_info=client_info,
     ) as session:
         with pytest.raises(McpError, match="inline read limit"):
-            await session.read_resource(AnyUrl(manifest.body_uri))
-        chunk = await session.read_resource(AnyUrl(manifest.chunk_uri(1)))
-        range_result = await session.read_resource(AnyUrl(manifest.range_uri(4, 8)))
+            await _read_resource_as_session(session, manifest.body_uri, session_id)
+        chunk = await _read_resource_as_session(session, manifest.chunk_uri(1), session_id)
+        range_result = await _read_resource_as_session(
+            session, manifest.range_uri(4, 8), session_id
+        )
 
     async with create_connected_server_and_client_session(
         app,
@@ -160,7 +187,7 @@ async def test_memory_client_respects_roots_and_chunked_artifact_reads(tmp_path)
         client_info=client_info,
     ) as session:
         with pytest.raises(McpError, match="roots policy"):
-            await session.read_resource(AnyUrl(manifest.manifest_uri))
+            await _read_resource_as_session(session, manifest.manifest_uri, session_id)
 
     chunk_first = chunk.contents[0]
     assert isinstance(chunk_first, types.BlobResourceContents)

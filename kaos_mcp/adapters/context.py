@@ -12,25 +12,31 @@ from kaos_mcp.config import KaosMCPSettings
 def caller_session_id(ctx: FastMCPContext) -> str | None:
     """Return the caller's session identity for artifact isolation.
 
-    Resolution order (audit-02 F1):
+    Resolution order (audit-04 F-001 security hardening):
 
     1. ``ctx.client_id`` — populated when the request supplies
        ``_meta.client_id`` explicitly. Highest precedence; lets a
-       trusted broker re-tag requests on behalf of multiple end users.
-    2. ``ctx.session.client_params.clientInfo.name`` — the
-       client-supplied name from MCP ``initialize``. Session-stable
-       across all requests within one connection, so artifacts created
-       and read by the same client always match. This is the typical
-       production identity (e.g. ``"claude-code"``, ``"codex"``).
-    3. ``ctx.request_id`` — per-request UUID. Last-ditch fallback; means
-       every request is its own session, so cross-request reads always
-       fail. Safe-by-default when no identity is presented.
+       trusted broker re-tag requests on behalf of multiple end users
+       and is the canonical production identity.
+    2. ``ctx.request_id`` — per-request UUID. Last-ditch fallback;
+       means every request is its own session, so cross-request reads
+       always fail. Safe-by-default when no identity is presented.
 
     Returns ``None`` when none of the above are available — typically
     when the handler is invoked outside an MCP request scope (in-process
     / test callers). Per the artifact store contract, ``None`` means
     "trusted in-process caller, no enforcement". Real MCP traffic always
     has a request scope so production callers never hit this fallback.
+
+    The previous ``ctx.session.client_params.clientInfo.name`` fallback
+    was removed in audit-04 (F-001) because ``clientInfo.name`` is a
+    client *product* name, not a tenant / session id. Two concurrent
+    streamable-HTTP clients both reporting ``"claude-code"`` collapsed
+    to the same isolation key, violating the per-session-isolation
+    guarantee in SECURITY.md. Callers that need cross-request artifact
+    reads MUST supply ``_meta.client_id`` explicitly; HTTP deployments
+    need authenticated transport (mTLS, OAuth, signed JWT) in front
+    that injects this identity.
     """
     try:
         client_id = ctx.client_id
@@ -38,19 +44,6 @@ def caller_session_id(ctx: FastMCPContext) -> str | None:
         client_id = None
     if client_id:
         return client_id
-
-    # Session-stable identity from MCP initialize/clientInfo.
-    try:
-        session = ctx.session
-        client_params = getattr(session, "client_params", None)
-        if client_params is not None:
-            client_info = getattr(client_params, "clientInfo", None)
-            if client_info is not None:
-                name = getattr(client_info, "name", None)
-                if name:
-                    return name
-    except (ValueError, AttributeError):
-        pass
 
     try:
         request_id = ctx.request_id

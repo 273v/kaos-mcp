@@ -11,6 +11,7 @@ Proves the full pipeline:
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 from kaos_content import DocumentBuilder, parse_markdown
@@ -27,6 +28,27 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from pydantic import AnyUrl
 
 from kaos_mcp import create_app
+
+
+async def _read_resource_as_session(session: Any, uri: str, session_id: str) -> Any:
+    """audit-04 F-001: send ``_meta.client_id`` on the resource read so
+    the server-side ``caller_session_id`` resolver picks up the test's
+    artifact-owning session identity. The stock
+    ``ClientSession.read_resource`` does not accept ``_meta``.
+    """
+    # RequestParams.Meta declares ``extra="allow"`` so arbitrary keys
+    # (incl. ``client_id``) round-trip into the wire-level _meta envelope.
+    # ty doesn't see the extra-allow contract, so build via dict.
+    meta = types.RequestParams.Meta.model_validate({"client_id": session_id})
+    return await session.send_request(
+        types.ClientRequest(
+            types.ReadResourceRequest(
+                params=types.ReadResourceRequestParams(uri=AnyUrl(uri), _meta=meta)
+            )
+        ),
+        types.ReadResourceResult,
+    )
+
 
 SAMPLE_MARKDOWN = """\
 ---
@@ -112,7 +134,8 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
 
     # F1: identify the test client with the artifact's session id so the
     # server-side caller-session check (clientInfo.name fallback) succeeds.
-    client_info = types.Implementation(name="pipeline-test", version="0.0.0")
+    session_id = "pipeline-test"
+    client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # List resource templates
         templates_result = await session.list_resource_templates()
@@ -123,15 +146,17 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
         assert "kaos://content/{artifact_id}/outline" in template_uris
 
         # Read full JSON document
-        json_result = await session.read_resource(AnyUrl(f"kaos://content/{manifest.artifact_id}"))
+        json_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}", session_id
+        )
         json_text = json_result.contents[0]
         assert isinstance(json_text, types.TextResourceContents)
         parsed_back = json.loads(json_text.text)
         assert parsed_back["metadata"]["title"] == "Quarterly Report Q1 2026"
 
         # Read markdown view
-        md_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/markdown")
+        md_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/markdown", session_id
         )
         md_text = md_result.contents[0]
         assert isinstance(md_text, types.TextResourceContents)
@@ -139,8 +164,8 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
         assert "Revenue grew" in md_text.text
 
         # Read metadata
-        meta_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/metadata")
+        meta_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/metadata", session_id
         )
         meta_text = meta_result.contents[0]
         assert isinstance(meta_text, types.TextResourceContents)
@@ -148,8 +173,8 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
         assert meta_dict["title"] == "Quarterly Report Q1 2026"
 
         # Read outline
-        outline_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/outline")
+        outline_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/outline", session_id
         )
         outline_text = outline_result.contents[0]
         assert isinstance(outline_text, types.TextResourceContents)
@@ -159,8 +184,8 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
         assert any(h["depth"] == 2 for h in outline)
 
         # Read tables
-        tables_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/tables")
+        tables_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/tables", session_id
         )
         tables_text = tables_result.contents[0]
         assert isinstance(tables_text, types.TextResourceContents)
@@ -170,16 +195,16 @@ async def test_full_content_pipeline_through_mcp(tmp_path) -> None:
         assert tables[0]["cols"] >= 2
 
         # Read annotations (empty for this doc)
-        ann_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/annotations")
+        ann_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/annotations", session_id
         )
         ann_text = ann_result.contents[0]
         assert isinstance(ann_text, types.TextResourceContents)
         assert json.loads(ann_text.text) == []
 
         # Read definitions (empty for this doc)
-        defs_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/definitions")
+        defs_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/definitions", session_id
         )
         defs_text = defs_result.contents[0]
         assert isinstance(defs_text, types.TextResourceContents)
@@ -196,11 +221,12 @@ async def test_content_node_resource(tmp_path) -> None:
     manifest = await store_document(doc, runtime, context, name="node-doc")
     app = create_app(runtime)
 
-    client_info = types.Implementation(name="node-test", version="0.0.0")
+    session_id = "node-test"
+    client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # Read first body node (should be heading "Executive Summary")
-        node_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/node/body%2F0")
+        node_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/node/body%2F0", session_id
         )
         node_text = node_result.contents[0]
         assert isinstance(node_text, types.TextResourceContents)
@@ -257,11 +283,12 @@ async def test_builder_document_through_mcp(tmp_path) -> None:
 
     app = create_app(runtime)
 
-    client_info = types.Implementation(name="builder-test", version="0.0.0")
+    session_id = "builder-test"
+    client_info = types.Implementation(name=session_id, version="0.0.0")
     async with create_connected_server_and_client_session(app, client_info=client_info) as session:
         # Read outline
-        outline_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/outline")
+        outline_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/outline", session_id
         )
         outline_content = outline_result.contents[0]
         assert isinstance(outline_content, types.TextResourceContents)
@@ -272,8 +299,8 @@ async def test_builder_document_through_mcp(tmp_path) -> None:
         assert 2 in depths
 
         # Read markdown
-        md_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/markdown")
+        md_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/markdown", session_id
         )
         md_content = md_result.contents[0]
         assert isinstance(md_content, types.TextResourceContents)
@@ -281,8 +308,8 @@ async def test_builder_document_through_mcp(tmp_path) -> None:
         assert "Agreement" in md_content.text
 
         # Read sections tree
-        sections_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/sections")
+        sections_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/sections", session_id
         )
         sections_content = sections_result.contents[0]
         assert isinstance(sections_content, types.TextResourceContents)
@@ -294,8 +321,8 @@ async def test_builder_document_through_mcp(tmp_path) -> None:
         # Find Article I ref
         article_ref = next(s["heading_ref"] for s in sections if "Article I" in s["heading_text"])
         encoded_ref = article_ref.lstrip("#/").replace("/", "%2F")
-        section_result = await session.read_resource(
-            AnyUrl(f"kaos://content/{manifest.artifact_id}/sections/{encoded_ref}")
+        section_result = await _read_resource_as_session(
+            session, f"kaos://content/{manifest.artifact_id}/sections/{encoded_ref}", session_id
         )
         section_content = section_result.contents[0]
         assert isinstance(section_content, types.TextResourceContents)

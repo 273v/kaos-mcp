@@ -68,11 +68,40 @@ class TestCallerSessionId:
         ctx = _make_ctx(client_id="client-A", request_id="req-123")
         assert caller_session_id(ctx) == "client-A"
 
-    def test_falls_back_to_clientinfo_name(self) -> None:
-        # Second-priority fallback: session-stable clientInfo.name from MCP
-        # initialize. Same identity across every request in one session.
+    def test_clientinfo_name_is_NOT_a_fallback_audit_04_f001(self) -> None:
+        """audit-04 F-001 security hardening: `clientInfo.name` is the
+        client *product* name (e.g. ``"claude-code"``), not a tenant /
+        session id. Two concurrent HTTP clients can both present the
+        same value, so honoring it as the session identity collapses
+        per-session isolation to per-client-brand.
+
+        Pin that the resolver no longer trusts it: when ``client_id`` is
+        absent, the resolver must fall through to ``request_id``, even
+        when ``clientInfo.name`` is set.
+        """
         ctx = _make_ctx(client_id=None, client_info_name="claude-code", request_id="req-789")
-        assert caller_session_id(ctx) == "claude-code"
+        # Must resolve to the per-request id, NOT "claude-code".
+        assert caller_session_id(ctx) == "req-789"
+
+    def test_two_clients_with_same_clientinfo_name_get_distinct_identities(
+        self,
+    ) -> None:
+        """Regression test for audit-04 F-001.
+
+        Two concurrent contexts whose only identifying metadata is the
+        same ``clientInfo.name`` must NOT collapse to a shared session
+        identity. Without the fallback, they each get a unique
+        per-request id, preserving the per-session-isolation guarantee
+        from SECURITY.md.
+        """
+        ctx_a = _make_ctx(client_id=None, client_info_name="claude-code", request_id="req-aaa")
+        ctx_b = _make_ctx(client_id=None, client_info_name="claude-code", request_id="req-bbb")
+        id_a = caller_session_id(ctx_a)
+        id_b = caller_session_id(ctx_b)
+        assert id_a != id_b, (
+            "two clients sharing clientInfo.name must NOT share a session id; "
+            f"got id_a={id_a!r} id_b={id_b!r}"
+        )
 
     def test_falls_back_to_request_id(self) -> None:
         ctx = _make_ctx(client_id=None, request_id="req-456")
