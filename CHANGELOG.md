@@ -8,13 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Security
 
-- `pyproject.toml` classifier bumped from `Development Status :: 3 - Alpha`
-  to `Development Status :: 5 - Production/Stable` to reflect the
-  0.1.0 GA release (WU-L #543) that froze the public API for the
-  0.1.x line. Closes audit-04/kaos-mcp.md Family D (classifier drift).
+- **Per-session isolation: removed the `clientInfo.name` fallback in
+  `caller_session_id`** (`kaos_mcp/adapters/context.py:12-34`). The
+  previous resolver fell through to `ctx.session.client_params.clientInfo.name`
+  when `ctx.client_id` was absent — but `clientInfo.name` is a client
+  *product* name (e.g. `"claude-code"`, `"codex"`), not a tenant or
+  session id. Two concurrent streamable-HTTP clients reporting the
+  same value collapsed to a single isolation key, violating the
+  per-session-isolation guarantee in `SECURITY.md:59-67`.
 
+  The resolver now goes `client_id → request_id → None`, matching the
+  SECURITY.md promise. Callers that need cross-request artifact reads
+  MUST supply `_meta.client_id` explicitly; HTTP deployments need
+  authenticated transport (mTLS, OAuth, signed JWT) in front that
+  injects this identity.
+
+  `tests/unit/test_session_enforcement.py` updated: the prior
+  `test_falls_back_to_clientinfo_name` (which pinned the obsolete
+  behavior) is replaced with two regression tests pinning the new
+  contract — `test_clientinfo_name_is_NOT_a_fallback_audit_04_f001`
+  and `test_two_clients_with_same_clientinfo_name_get_distinct_identities`.
+
+  Closes audit-04/kaos-mcp.md F-001. Behavioral break for any
+  unauthenticated HTTP deployment that relied on the implicit fallback;
+  see SECURITY.md for the documented identity-injection requirement.
 
 
 ## [0.1.0] — 2026-05-20
