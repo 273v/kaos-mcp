@@ -8,7 +8,7 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/kaos-mcp)](https://pypi.org/project/kaos-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/kaos-mcp)](https://pypi.org/project/kaos-mcp/)
 [![License](https://img.shields.io/pypi/l/kaos-mcp)](https://github.com/273v/kaos-mcp/blob/main/LICENSE)
-[![CI](https://github.com/273v/kaos-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/273v/kaos-mcp/actions/workflows/ci.yml)
+[![quality](https://github.com/273v/kaos-mcp/actions/workflows/quality.yml/badge.svg)](https://github.com/273v/kaos-mcp/actions/workflows/quality.yml)
 
 `kaos-mcp` is the FastMCP runtime and server bridge of KAOS — it mounts
 any [`KaosRuntime`](https://github.com/273v/kaos-core) into the official
