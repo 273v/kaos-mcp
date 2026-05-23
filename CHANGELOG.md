@@ -5,8 +5,9 @@ All notable changes to `kaos-mcp` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-
+
 ## [Unreleased]
+
 
 ### Security
 
@@ -34,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Closes audit-04/kaos-mcp.md F-001. Behavioral break for any
   unauthenticated HTTP deployment that relied on the implicit fallback;
   see SECURITY.md for the documented identity-injection requirement.
+
+### Documentation
+
+- **audit-04 README test count drift.** README Test-coverage row
+  updated from "104 unit tests" to 147 (the focused unit run now
+  reports 147 collected). Number drifted as new config/adapter/log-
+  bridge/FastMCP tests landed during the GA cycle. Doc-only fix; no
+  public API or behavior change.
 
 
 ## [0.1.0] — 2026-05-20
