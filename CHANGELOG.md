@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-05-25
+
+Dependabot batch.
+
+### Dependabot
+
+- chore(deps): bump the deps-minor group with 3 updates (#32)
+
 ## [0.1.1] — 2026-05-23
 
 audit-04 remediation: F-001 security hardening + README/CI badge fixes.
