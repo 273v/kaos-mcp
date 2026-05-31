@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from pathlib import Path
 
 import pytest
@@ -263,8 +264,16 @@ class TestSetupEnv:
         monkeypatch.setattr(env_module.subprocess, "run", _no_subprocess)
 
         actions = env_module.setup_env(confirm=False, dry_run=False)
-        # Confirmation gate should produce a "requires --yes" message.
-        assert any("requires --yes" in a for a in actions), actions
+        # Confirmation gate: on POSIX the installer pipelines report
+        # "requires --yes"; on Windows they report manual package-manager
+        # hints (winget / PowerShell `irm`) that do not auto-fetch. Either
+        # way the load-bearing F6 invariant is that NO subprocess ran.
+        if platform.system() == "Windows":
+            assert any(
+                ("winget" in a) or ("PowerShell" in a) or ("requires --yes" in a) for a in actions
+            ), actions
+        else:
+            assert any("requires --yes" in a for a in actions), actions
         assert called == []
 
     def test_setup_env_dry_run_activates_hardened_pnpm(
