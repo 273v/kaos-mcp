@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-06-01
+
+### Fixed
+
+- **Python 3.15 install support.** Bumped `rpds-py` 0.30.0 → 2026.5.1 to
+  pick up cp315 binary wheels (#34). Without the bump, installing
+  `kaos-mcp` on Python 3.15 fell back to a source build of `rpds-py`
+  (a `jsonschema` transitive dependency). No public API, CLI, or MCP
+  schema change.
+
 ## [0.1.2] — 2026-05-25
 
 Dependabot batch.
