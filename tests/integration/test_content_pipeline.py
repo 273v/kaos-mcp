@@ -251,7 +251,7 @@ async def test_tool_result_with_content_artifact(tmp_path) -> None:
     assert result.content[0].type == "text"
     assert "Quarterly Report" in result.require_text()
     assert result.content[1].type == "resource_link"
-    assert manifest.artifact_id in result.content[1].uri  # ty: ignore[unresolved-attribute]
+    assert manifest.artifact_id in result.content[1].uri
 
 
 @pytest.mark.integration
