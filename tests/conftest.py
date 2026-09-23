@@ -67,7 +67,7 @@ class EchoTool(KaosTool):
         return ToolResult(
             content=[TextContent(text=message)],
             structuredContent=structured,
-            meta={"trace_id": context.trace_id if context else None},  # ty: ignore[unknown-argument]
+            meta={"trace_id": context.trace_id if context else None},
         )
 
 
