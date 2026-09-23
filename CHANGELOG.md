@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] — 2026-09-22
 
+First PyPI release carrying the 0.1.4 `mcp<2` import fix.
+
+### Fixed
+
+- **Release pipeline:** `pypa/gh-action-pypi-publish` bumped to v1.14.2
+  (twine 7), which accepts `Metadata-Version: 2.5` wheels from current hatchling.
+
 ### Security
 
 - **Raised the `mcp` floor to 1.28.1** (`mcp[cli]>=1.28.1,<2`). mcp 1.26.0–1.28.0
@@ -23,7 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pydantic-settings 2.15.0; dev tools ruff 0.16.8, ty 0.0.82
   (supersedes Dependabot #51). `security-full` pip-audit is clean.
 
-## [0.1.4] — 2026-09-22
+## [0.1.4] — 2026-09-22 [NOT PUBLISHED TO PYPI]
+
+Tagged and released on GitHub only: the pinned `pypa/gh-action-pypi-publish`
+rejected the wheel's `Metadata-Version: 2.5`. Its fix ships in 0.1.5.
 
 ### Fixed
 
