@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-09-22
+
+### Fixed
+
+- **Fresh installs failed to import.** `mcp` 2.0 (2026-07-28) removed
+  `mcp.server.fastmcp`, and the unbounded `mcp[cli]>=1.26.0` requirement let
+  `pip install kaos-mcp` resolve 2.x, so `import kaos_mcp` raised
+  `ModuleNotFoundError`. The requirement is now `mcp[cli]>=1.26.0,<2`; a
+  regression test asserts the published metadata excludes 2.x. Migration to
+  the v2 `MCPServer` API is tracked separately.
+
 ## [0.1.3] — 2026-06-01
 
 ### Fixed

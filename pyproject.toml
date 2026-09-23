@@ -41,7 +41,9 @@ dependencies = [
   "httpx>=0.28.1",
   "kaos-content[markdown]>=0.1.0,<0.2",
   "kaos-core>=0.1.0,<0.2",
-  "mcp[cli]>=1.26.0",
+  # mcp 2.x removed `mcp.server.fastmcp` (renamed to MCPServer); kaos-mcp
+  # targets the v1 FastMCP API until the v2 migration lands.
+  "mcp[cli]>=1.26.0,<2",
   "pydantic>=2.11.0",
   "pydantic-settings>=2.8.1",
   # 2026-05-22: pinned to 1.0.1 — closes PYSEC-2026-161.
@@ -52,6 +54,7 @@ dependencies = [
 dev = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.26.0",
+  "packaging>=24.0",
   "pytest-cov>=6.0.0",
   "ruff>=0.11.0",
   "ty>=0.0.34,<0.1",
